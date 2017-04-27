@@ -11,22 +11,57 @@ from beam_tracing import _Beam, refraction_sh, quad_pts_weights, integrate_quad
 from c.radar_interp_c import get_all_radar_pts
 
 def get_refractivity(data):
-    Pw = (data['P']*data['QV'])/(data['QV']*(1-0.6357)+0.6357)
-    N = (77.6/data['T'])*(0.01*data['P']+4810*(0.01*data['Pw'])/d['T'])
+    """
+    FUNCTION:
+        get_refractivity(data)
+    
+    PURPOSE:
+         Compute the atmospheric refractivity profile from COSMO data
+    
+    INPUTS:
+        data : a dictionary with three fields 'P' : the atm. pressure, 'T':
+            the temperature, 'QV' : the water vapour concentration
+    OUTPUTS:
+        N : the profile of atmospheric refractivity
+    
+    """    
+    Pw = (data['P'] * data['QV']) / (data['QV'] * (1 - 0.6357) + 0.6357)
+    N = (77.6 / data['T']) * (0.01 * data['P'] + 4810 * (0.01 * Pw) / data['T'])
     return N
 
-def coords_profile(start, stop, step=-1, npts=-1):
-    # This function gets points along a profile_instance specified by a tuple of starting coordinates (lon/lat) 
-    # and ending coordinates (lon/lat). Either a number of points can be specified, in which case the profile_instance 
-    # will consist of N linearly spaced points or a constant distance step, in which case the number of points in the profile_instance 
-    # will be the total distance divided by the distance step.
-    # This function is particularly convenient when we want to create a slice with the 'latlon' option
+def coords_profile(start, stop, step = None, npts = None):
+    """
+    FUNCTION:
+        coords_profile(start, stop, step=-1, npts=-1)
+    
+    PURPOSE:
+        Computes a linear profile of coordinates going from point a to point b
+        with a either a fixed step distance or a fixed number of points
+    
+    INPUTS:
+        start : a tuple specifying the coordinates of point a in (lon,lat) 
+            WGS84 coordinates
+        stop : a tuple specifying the coordinates of point b in (lon,lat) 
+            WGS84 coordinates
+        step : (optional) the distance between two consecutive points (in m.)
+        npts : (optional) the total number of points along the profile, inclu-
+            ding start and end points
+        
+        NOTE that you must provide either step or npts!
+        
+    OUTPUTS:
+        profile : a N x 2 array of lon/lat coordinates, N being the total 
+                  number of points
+    
+    """    
+    
     start=np.asarray(start)
     stop=np.asarray(stop)
     use_step=False
     use_npts=False
+    
     # Check inputs
-    if step <= 0 and npts < 3:
+    if not step and npts < 3:
         msg = """
         Neither a valid distance step nor a valid number of points of the 
         transect have been specified, please provide one or the other!
@@ -35,13 +70,13 @@ def coords_profile(start, stop, step=-1, npts=-1):
         be larger than 0
         """
         raise ValueError(msg)
-    elif step > 0 and npts >= 3:
+    elif step and npts >= 3:
         msg = """
         Both a distance step and a number of points in the transect have been 
         specified, only the distance step will be used!
         """
         raise ValueError(msg)
-    elif step > 0 and npts < 3:
+    elif step and not npts:
         use_step=True
     else:
         use_npts=True
@@ -53,25 +88,50 @@ def coords_profile(start, stop, step=-1, npts=-1):
         npts = np.floor(dist/step)
         dist = npts*step
         endlon, endlat, backaz = g.fwd(start[0],start[1],az12, dist)
-        profile_instance = g.npts(start[0],start[1], endlon, endlat ,npts-2)
+        profile = g.npts(start[0],start[1], endlon, endlat ,npts-2)
     if use_npts:
-        profile_instance = g.npts(start[0],start[1],stop[0],stop[1],npts-2)
+        profile = g.npts(start[0],start[1],stop[0],stop[1],npts-2)
     
     # Add start points
-    profile_instance.insert(0,(start[0],start[1]))
+    profile.insert(0,(start[0],start[1]))
     
     if use_npts:
-        profile_instance.insert(len(profile_instance),(stop[0],stop[1]))
+        profile.insert(len(profile),(stop[0],stop[1]))
         
-    profile_instance = np.asarray(profile_instance)
-    return profile_instance
+    profile = np.asarray(profile)
+    return profile
 
 def extract(data, variable_names, slice_type, idx, parallel = False):
-    # Type can be either:
-        # "level" (scalar) : Cut at fixed height levels (interpolation)
-        # "lat" (scalar) : Cut at fixed geographical latitude (interpolation)
-        # "lon" (scalar) : Cut at fixed geographical longitude (interpolation)
-        # "latlon" (nx2 array) : Cut along list of geographical latitude/longitude pairs (interpolation)
+    """
+    FUNCTION:
+        extract(data, variable_names, slice_type, idx, parallel = False)
+    
+    PURPOSE:
+        Extracts a specific profile of COSMO data along various types of 
+        transects using linear interpolation
+    
+    INPUTS:
+        data : a data structure containing COSMO data as returned by a COSMO
+            query
+            
+        variable_names : the list of variables to be extracted along the pro-
+            file, they need to be included in data!
+            
+        slice_type : the type of slice to be extracted, need to be either
+            'level', 'lon', 'lat', 'lonlat', 'PPI' or 'RHI'
+            
+        idx : information about how and where the slice should be done, see
+            more specific info in corresponding part of the code
+            
+        parallel : TODO allows parallel computation (not implemented yet)
+        
+    OUTPUTS:
+        output : a dictionary containing one array for every retrieved variable
+            these arrays have additional fields 'coordinates' which contains
+            the coordinates of the data and for some slice types 'attributes'
+            which contains additional useful data
+    
+    """    
     
     if slice_type not in ['level','lon','lat','lonlat','PPI','RHI']:
         msg = """
@@ -95,6 +155,16 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
     output = {}
     
     if slice_type == 'level':
+        """
+        slice_type = 'level'
+        
+        PURPOSE : 
+            Cut plane(s) at fixed altitude levels (with linear interpolation)
+
+        INPUTS :
+            idx : a list or array of altitude levels, ex idx = [1000,2000,5000]
+        
+        """
         cut_val = idx
             
         if type(cut_val) != list:
@@ -165,6 +235,17 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             output[varname] = marray
         
     if slice_type == 'lat':
+        """
+        slice_type = 'lat'
+        
+        PURPOSE : 
+            Cut transect at fixed latitude (in WGS84 coordinates)
+
+        INPUTS :
+            idx : a float with the latitude, ex idx = 48.5
+        
+        """
+        
         # First we check if the given profile is valid
         for i,varname in enumerate(variable_names):
 
@@ -246,6 +327,16 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             output[varname] = marray
 
     if slice_type == 'lon':
+        """
+        slice_type = 'lon'
+        
+        PURPOSE : 
+            Cut transect at fixed longitude (in WGS84 coordinates)
+
+        INPUTS :
+            idx : a float with the longitude, ex idx = 11
+        
+        """
         # First we check if the given profile is valid
         for i,varname in enumerate(variable_names):
 
@@ -328,6 +419,17 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             output[varname] = marray
         
     if slice_type == 'lonlat':
+        """
+        slice_type = 'lonlat'
+        
+        PURPOSE : 
+            Cut transect at fixed longitude/latitude coordinates in WGS84
+
+        INPUTS :
+            idx : a Nx2 float array containing longitudes in the first 
+                column and latitudes in the second column
+        
+        """
         for i,varname in enumerate(variable_names):
 
             var = data[varname]
@@ -438,6 +540,40 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             output[varname] = marray
                 
     if slice_type == 'PPI':
+        """
+        slice_type = 'PPI'
+        
+        PURPOSE : 
+            Cut plane along the coordinates of a PPI radar scan, using 
+            atmospheric refraction and integration over the antenna diagram
+
+        INPUTS :
+            idx : a dictionary with the following fields :
+                rrange : a list or array of floats giving the distance of every 
+                    radar gate
+                rpos : (lon,lat, altitude) 3D coordinates of the radar in 
+                    WGS84 coordinates
+                elevation : float specifying the elevation angle of the 
+                    PPI scan   
+                beamwidth : the 3dB beamwidth of the antenna, will not
+                    be used if you set npts_quad = [1,1] (no antenna integ.)
+                azimuths : (optional) a list or array of floats corresponding
+                    to the azimuth angles of the PPI scan, if not set a default
+                    list going from 0 to 360 with a step corresponding to the
+                    beamwidth will be used
+                npts_quad : (optional) a tuple giving the number of interpola-
+                    tion points in azimuthal and elevational directions. The
+                    default is (3,3)
+                refraction_method : (optional) To compute the propagation of 
+                    the radar beam, two schemes can be used: if 
+                    refraction_scheme = 1, the standard 4/3 Earth radius scheme
+                    will be used, if refraction_scheme = 2, a more accurate 
+                    scheme based on a refractivity profile estimated from 
+                    the model will be used; this requires QV (water vapour), 
+                    T (temperature) and P (pressure) to be present in the file.
+                    Default is 1
+        """
+        
         # Check scan specifications
         # Mandatory arguments
         try:
@@ -689,6 +825,39 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             output[varname] = marray  
                 
     if slice_type == 'RHI':
+        """
+        slice_type = 'RHI'
+        
+        PURPOSE : 
+            Cut plane along the coordinates of a RHI scan, using 
+            atmospheric refraction and integration over the antenna diagram
+
+        INPUTS :
+            idx : a dictionary with the following fields :
+                rrange : a list or array of floats giving the distance of every 
+                    radar gate
+                rpos : (lon,lat, altitude) 3D coordinates of the radar in 
+                    WGS84 coordinates
+                azimuth : float specifying the azimuth angle of the 
+                    RHI scan   
+                beamwidth : the 3dB beamwidth of the antenna, will not
+                    be used if you set npts_quad = [1,1] (no antenna integ.)
+                elevations : (optional) a list or array of floats corresponding
+                    to the elevation angles of the PPI scan, if not set a default
+                    list going from 0 to 360 with a step corresponding to the
+                    beamwidth will be used
+                npts_quad : (optional) a tuple giving the number of interpola-
+                    tion points in azimuthal and elevational directions. The
+                    default is (3,3)
+                refraction_method : (optional) To compute the propagation of 
+                    the radar beam, two schemes can be used: if 
+                    refraction_scheme = 1, the standard 4/3 Earth radius scheme
+                    will be used, if refraction_scheme = 2, a more accurate 
+                    scheme based on a refractivity profile estimated from 
+                    the model will be used; this requires QV (water vapour), 
+                    T (temperature) and P (pressure) to be present in the file.
+                    Default is 1
+        """
         # Check scan specifications
         # Mandatory arguments
         try:
