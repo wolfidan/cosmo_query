@@ -25,7 +25,56 @@ class _Beam():
         self.dist_profile=dist_ground_profile
         self.heights_profile=heights_profile
         self.values=dic_values
+
+
+def get_refractivity(data):
+    """
+    FUNCTION:
+        get_refractivity(data)
     
+    PURPOSE:
+         Compute the atmospheric refractivity profile from COSMO data
+    
+    INPUTS:
+        data : a dictionary with three fields 'P' : the atm. pressure, 'T':
+            the temperature, 'QV' : the water vapour concentration
+    OUTPUTS:
+        N : the estimated atmospheric refractivity
+    
+    """    
+    Pw = (data['P'] * data['QV']) / (data['QV'] * (1 - 0.6357) + 0.6357)
+    N = (77.6 / data['T']) * (0.01 * data['P'] + 4810 * (0.01 * Pw) / data['T'])
+    
+    mapping = data['P'].metadata['mapping']
+    x = data['x_'+str(mapping)]
+    y = data['y_'+str(mapping)]
+    z = data['z_'+str(mapping)]
+
+    # We also need to add some info about the coordinate system of N
+    
+    # Get lower left corner of COSMO domain in local coordinates
+    llc_COSMO = [x[0],y[0]]
+    llc_COSMO = np.array(llc_COSMO).astype('float32')
+
+    # Get resolution             
+    res_COSMO = [x[1] - x[0], y[1] - y[0]]
+
+    # Get latitude and longitude of southern pole
+    grid_mapping = data['grid_mapping_' + str(mapping)]
+    lat_SP = - grid_mapping.metadata['grid_north_pole_latitude']
+    lon_SP = grid_mapping.metadata['grid_north_pole_longitude'] - 180
+  
+    N.attributes = {}
+    N.attributes['proj_info'] = {'Latitude_of_southern_pole':lat_SP,
+                                'Longitude_of_southern_pole':lon_SP,
+                                'Lo1':llc_COSMO[0],
+                                'La1':llc_COSMO[1]}
+    
+    N.attributes['resolution'] = res_COSMO
+    N.attributes['z-levels'] = z
+    return N
+
+  
 def _sum_arr(x,y, cst = 0):
     diff = np.array(x.shape) - np.array(y.shape)
     pad_1 = []
@@ -178,25 +227,26 @@ def ref_ODE_s(range_vec, elevation_angle, coords_radar, N):
     
     # Get info about COSMO coordinate system
     proj_COSMO = N.attributes['proj_info']
-    coords_rad_in_COSMO = global_to_local_coords(coords_radar,
-                              [proj_COSMO['Latitude_of_southern_pole'],
-                               proj_COSMO['Longitude_of_southern_pole']])
+    coords_rad_in_COSMO = global_to_local_coords(coords_radar[0], coords_radar[1],
+                              [proj_COSMO['Longitude_of_southern_pole'],
+                               proj_COSMO['Latitude_of_southern_pole']])
     
     llc_COSMO=(float(proj_COSMO['Lo1']), float(proj_COSMO['La1']))
     res_COSMO=N.attributes['resolution']
     
     # Get position of radar in COSMO coordinates
      # Note that for lat and lon we stay with indexes but for the vertical we have real altitude s
-    pos_radar_bin=[(coords_rad_in_COSMO[0]-llc_COSMO[1])/res_COSMO[1],
-                   (coords_rad_in_COSMO[1]-llc_COSMO[0])/res_COSMO[0]]
+    pos_radar_bin=[(coords_rad_in_COSMO[0][0]-llc_COSMO[0])/res_COSMO[0],
+                   (coords_rad_in_COSMO[0][1]-llc_COSMO[1])/res_COSMO[1]]
                    
     # Get refractive index profile from refractivity estimated from COSMO variables
-    n_vert_profile=1+(N.data[:,int(np.round(pos_radar_bin[0])),
-                             int(np.round(pos_radar_bin[0]))])*1E-6
+    n_vert_profile=1+(N[:,int(np.round(pos_radar_bin[0])),
+                             int(np.round(pos_radar_bin[1]))])*1E-6
     # Get corresponding altitudes
     h = N.attributes['z-levels'][:,int(np.round(pos_radar_bin[0])),
-                                int(np.round(pos_radar_bin[0]))] 
-    
+                                int(np.round(pos_radar_bin[1]))] 
+    h = 0.5 * (h[1:] + h[0:-1]) # h is defined on half-levels
+
     # Get earth radius at radar latitude
     RE = earth_radius(coords_radar[0])
 
@@ -247,7 +297,7 @@ def global_to_local_coords(lon,lat,sp_coord = None, option = 1):
     sp_lon = sp_coord[0]
     sp_lat = sp_coord[1]
 
-    theta = 90+sp_lat # Rotation around y-axis
+    theta = 90 + sp_lat # Rotation around y-axis
     phi = sp_lon # Rotation around z-axis
 
     phi = (phi*np.pi)/180 # Convert degrees to radians

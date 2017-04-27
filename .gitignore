@@ -9,6 +9,9 @@ __pycache__/
 # Build folder
 build/
 
+# All npz files
+*.npz
+
 # Distribution / packaging
 .Python
 env/

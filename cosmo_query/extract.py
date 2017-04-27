@@ -6,54 +6,9 @@ import pyproj as pyproj
 import numpy as np
 import scipy.spatial as spatial
 
-from beam_tracing import global_to_local_coords
+from beam_tracing import global_to_local_coords, get_refractivity
 from beam_tracing import _Beam, refraction_sh, quad_pts_weights, integrate_quad
 from c.radar_interp_c import get_all_radar_pts
-
-def get_refractivity(data):
-    """
-    FUNCTION:
-        get_refractivity(data)
-    
-    PURPOSE:
-         Compute the atmospheric refractivity profile from COSMO data
-    
-    INPUTS:
-        data : a dictionary with three fields 'P' : the atm. pressure, 'T':
-            the temperature, 'QV' : the water vapour concentration
-    OUTPUTS:
-        N : the estimated atmospheric refractivity
-    
-    """    
-    Pw = (data['P'] * data['QV']) / (data['QV'] * (1 - 0.6357) + 0.6357)
-    N = (77.6 / data['T']) * (0.01 * data['P'] + 4810 * (0.01 * Pw) / data['T'])
-    
-    mapping = data['P'].metadata['mapping']
-    x = data['x_'+str(mapping)]
-    y = data['y_'+str(mapping)]
-    
-    # We also need to add some info about the coordinate system of N
-    
-    # Get lower left corner of COSMO domain in local coordinates
-    llc_COSMO = [x[0],y[0]]
-    llc_COSMO = np.array(llc_COSMO).astype('float32')
-
-    # Get resolution             
-    res_COSMO = [x[1] - x[0], y[1] - y[0]]
-
-    # Get latitude and longitude of southern pole
-    grid_mapping = data['grid_mapping_' + str(mapping)]
-    lat_SP = - grid_mapping.metadata['grid_north_pole_latitude']
-    lon_SP = grid_mapping.metadata['grid_north_pole_longitude'] - 180
-  
-    N.attributes = {}
-    N.attributes['proj_info'] = {'Latitude_of_southern_pole':lat_SP,
-                                'Longitude_of_southern_pole':lon_SP,
-                                'Lo1':llc_COSMO[0],
-                                'La1':llc_COSMO[1]}
-    
-    N.attributes['resolution'] = res_COSMO
-    return N
 
 def coords_profile(start, stop, step = None, npts = None):
     """
@@ -797,8 +752,8 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                    
                         model_data=var[:]
                         
-                        coords_rad_loc = np.fliplr(coords_rad_loc).astype('float32')
-                        
+                        coords_rad_loc = coords_rad_loc.astype('float32')
+     
                         rad_interp_values = get_all_radar_pts(len(rrange),\
                                           coords_rad_loc,h,model_data, \
                                           zlevels, llc_COSMO,res_COSMO)[1]
@@ -1085,7 +1040,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                         model_data=var[:]
                         
                         coords_rad_loc = np.fliplr(coords_rad_loc).astype('float32')
-                        
+                
                         rad_interp_values = get_all_radar_pts(len(rrange),\
                                           coords_rad_loc,all_h[vert_idx],model_data, \
                                           zlevels, llc_COSMO,res_COSMO)[1]
