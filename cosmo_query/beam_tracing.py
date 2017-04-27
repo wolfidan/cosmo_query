@@ -3,6 +3,11 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import odeint
 
+"""
+Contains sets of routines to perform beam tracing for PPI and RHI data
+extraction as well as some routines for antenna integration
+"""
+
 SP_COORDS_COSMO = [10,-43] # This info can be obtained from any MCH Grib file
 
 RAD_TO_DEG = 180.0/np.pi
@@ -10,7 +15,8 @@ DEG_TO_RAD = 1./RAD_TO_DEG
 
 
 class _Beam():
-    def __init__(self, dic_values, mask, lats_profile,lons_profile, dist_ground_profile,heights_profile, GH_pt=[],GH_weight=1):
+    def __init__(self, dic_values, mask, lats_profile, lons_profile,
+                 dist_ground_profile, heights_profile, GH_pt=[], GH_weight=1):
         self.mask=mask
         self.GH_pt=GH_pt
         self.GH_weight=GH_weight
@@ -173,7 +179,7 @@ def ref_ODE_s(range_vec, elevation_angle, coords_radar, N):
     
     # Get info about COSMO coordinate system
     proj_COSMO = N.attributes['proj_info']
-    coords_rad_in_COSMO = pc.WGS_to_COSMO(coords_radar,
+    coords_rad_in_COSMO = global_to_local_coords(coords_radar,
                               [proj_COSMO['Latitude_of_southern_pole'],
                                proj_COSMO['Longitude_of_southern_pole']])
     

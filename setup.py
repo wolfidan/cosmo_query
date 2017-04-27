@@ -56,7 +56,7 @@ setup(  name        = "cosmo_query",
 			 'cosmo_query':['./cosmo_info/list_vars/*','./cosmo_info/file_logs/*',
                    './cosmo_info/*.npz']},
         data_files = [(install_to, ["LICENSE"])],
-#        include_package_data=True,
+        include_package_data=True,
         install_requires=[
           'pyproj',
           'numpy',

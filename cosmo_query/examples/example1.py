@@ -10,34 +10,34 @@ Created on Wed Apr 19 17:28:37 2017
 import numpy as np
 import matplotlib.pyplot as plt
 
-from COSMO_query import config, SSH, Query
-from COSMO_query import save_netcdf, load_netcdf
-from COSMO_query import extract, coords_profile
-#
-## We initiate a connection to ela.cscs.ch, with username and password
-## specified in the config.py file (password is not needed if ssh key is 
-## defined)
-#connection = SSH(config.ELA_ADRESS,config.USERNAME,config.PASSWORD)
-#
-## We also need to open a channel to kesch.cscs.ch since it 
-#connection.open_channel(config.KESCH_ADRESS,config.USERNAME)
-#
-## Now that the connection is setup we can create a Query instance
-#query = Query(connection)
-#
-## And use this query to retrieve some data
-#
-#variables = ['T','P'] # we want temperature and pressure
-#date = '2016-05-31 12:30' # for the 31th May 2016 at 12h30
-#model_res = 'fine' # at high resolution
-#mode = 'analysis' # In analysis mode
-#coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
-#
-#data = query.retrieve_data(variables, date, model_res = 'fine', 
-#                          mode = 'analysis', coord_bounds = coord_bounds)
-#
-## We can save this data to a netcdf
-#save_netcdf(data,'myfile.nc')
+from cosmo_query import config, SSH, Query
+from cosmo_query import save_netcdf, load_netcdf
+from cosmo_query import extract, coords_profile
+
+# We initiate a connection to ela.cscs.ch, with username and password
+# specified in the config.py file (password is not needed if ssh key is 
+# defined)
+connection = SSH(config.ELA_ADRESS,config.USERNAME,config.PASSWORD)
+
+# We also need to open a channel to kesch.cscs.ch since it 
+connection.open_channel(config.KESCH_ADRESS,config.USERNAME)
+
+# Now that the connection is setup we can create a Query instance
+query = Query(connection)
+
+# And use this query to retrieve some data
+
+variables = ['T','P','QV'] # we want temperature and pressure
+date = '2016-05-31 12:30' # for the 31th May 2016 at 12h30
+model_res = 'fine' # at high resolution
+mode = 'analysis' # In analysis mode
+coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+
+data = query.retrieve_data(variables, date, model_res = 'fine', 
+                          mode = 'analysis', coord_bounds = coord_bounds)
+
+# We can save this data to a netcdf
+save_netcdf(data,'myfile.nc')
 
 # And load it again from this file
 data = load_netcdf('myfile.nc')
@@ -66,7 +66,7 @@ options_PPI['elevation'] = 10
 options_PPI['rrange'] = np.arange(200,20000,75) # from 0.2 to 20 km with a res of 75 m
 options_PPI['npts_quad'] = [3,3] # 3 quadrature points in azimuthal, 3 in elevational directions
 options_PPI['rpos'] = [7.0923,46.1134,500] # Radar position in lon/lat/alt
-options_PPI['refraction_scheme'] = 1 # 1 = standard 4/3, 2 = ODE refraction 
+options_PPI['refraction_scheme'] = 2 # 1 = standard 4/3, 2 = ODE refraction 
 # model : more accurate but needs P (pressure), QV (water vapour) and 
 # T (temperature) to be in the data structure
 
