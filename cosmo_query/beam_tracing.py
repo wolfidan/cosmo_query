@@ -96,8 +96,7 @@ def integrate_quad(list_GH_pts):
     # Sum the mask of all beams to get overall mask
     mask = np.zeros(n_gates,) # This mask serves to tell if the measured point is ok, or below topo or above COSMO domain
     frac_pow = np.zeros(n_gates,) # Fraction of power received at antenna
-    import pdb
-    pdb.set_trace()
+
     for i,p in enumerate(list_GH_pts):
         mask = _sum_arr(mask,p.mask) # Get mask of every Beam
         frac_pow = _sum_arr(frac_pow, (p.mask==0).astype(float)*p.GH_weight)
