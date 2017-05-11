@@ -223,17 +223,17 @@ class Query(object):
         """   
         
         if mode == 'analysis': # Analysis
-            if date < cfg.COSMO_2_END: # OLD COSMO-2
+            if date < cfg.COSMO_2_END: # Old simulations
                 fname = cfg.COSMO_ROOT_DIR + '/osm/LA'+str(date.year)[2:] + '/' + \
                     datetime.datetime.strftime(date,'%Y%m%d')+'/'+model_res+'/' + \
                     'laf' + datetime.datetime.strftime(date,'%Y%m%d%H')         
-            else: # NEW COSMO-1
+            else: # New simulations
                 if model_res == 'fine':
                     model_name = 'COSMO-1'
                 elif model_res == 'coarse':
                     model_name = 'COSMO-7'
                     
-                fname = cfg.COSMO_ROOT_DIR + '/owm/'+model_name+'/ANA'+str(date.year)[2:] + '/' + \
+                fname = cfg.COSMO_ROOT_DIR + '/owm/'+model_name+'/ANA'+str(date.year)[2:] + '/laf' + \
                     datetime.datetime.strftime(date,'%Y%m%d%H')
                     
         elif mode == 'forecast': # Forecast
@@ -259,7 +259,7 @@ class Query(object):
                 
                 raise ValueError(msg)
                 
-            if forecast_start < cfg.COSMO_2_END:
+            if forecast_start < cfg.COSMO_2_END: # Old simulations
                 if model_res == 'fine':
                     model_name = 'f'
                 elif model_res == 'coarse':
@@ -268,7 +268,7 @@ class Query(object):
                 fname = cfg.COSMO_ROOT_DIR + '/osm/LM'+str(forecast_start.year)[2:] + '/' + \
                     datetime.datetime.strftime(forecast_start,'%y%m%d%H')+'*/grib/' + \
                     'verif_'+model_name+str(forecast_hours).zfill(2)
-            else:
+            else:  # Newer simulations
                 if model_res == 'fine':
                     model_name = 'COSMO-1'
                     prefix = 'c1ffsurf'
@@ -364,7 +364,7 @@ class Query(object):
                 cosmo_info/file_logs directory
                 """
                 print(msg)
-        
+
         t = datetime.datetime.strptime(date,'%Y-%m-%d %H:%M')
         
         if forecast_start:
@@ -459,13 +459,14 @@ class Query(object):
             cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
                 ' -o ~/filtered' + str(i) + '.grb ' + f 
             self.connection.send_command(cmd_filter, client = 'target')
+
             # (2) CROP
             cmd_crop = cfg.FX_DIR + 'fxcrop --force -i ' + \
                 ','.join([str(i_min),str(i_max)]) + \
                 ' -j ' + ','.join([str(j_min),str(j_max)]) + \
                 ' -o ~/crop' + str(i) + '.grb ~/filtered'+str(i)+'.grb'
             self.connection.send_command(cmd_crop, client = 'target')  
-            
+
             # (3) CONVERT TO NETCDF
             cmd_convert = cfg.FX_DIR + 'fxconvert --force -o ~/convert' + \
                 str(i) + '.nc' + \
@@ -475,7 +476,7 @@ class Query(object):
             # (4) DOWNLOAD
             cmd_scp = 'scp ' + self.connection.jump_adress + ':~/convert' +\
                 str(i)+'.nc ' + cfg.LOCAL_FOLDER     
-            
+
             subprocess.call(cmd_scp, shell = True)      
             
    
