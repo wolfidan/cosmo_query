@@ -752,21 +752,21 @@ if __name__ == '__main__':
 
                 
                 
-#    events = ['2016-12-17','2016-12-30','2017-01-06','2017-01-15']
-#    duration = [2,5,1,1] # in days
-#    import pandas as pd
-#    import datetime
-#    for i,e in enumerate(events):
-#        time = datetime.datetime.strptime(e,'%Y-%m-%d')
-#        timeseries = pd.date_range(time, periods=24 * duration[i], freq='H')
-#        if not os.path.exists('./'+e.replace('-','_')):
-#            os.makedirs('./'+e.replace('-','_'))
-#        for time in timeseries:
-#            fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
-#            if not os.path.exists(fname):
-#                time_str = datetime.datetime.strftime(time,'%Y-%m-%d %H:%M')
-#                
-#                query.retrieve_data(['HZEROCL','TOT_PREC'],time_str,coord_bounds=([6.7,46],[7.6,46.4]))
-#                fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
-#                query.save_netcdf(fname)
-#    
+    events = ['2016-12-17','2016-12-30','2017-01-06','2017-01-15']
+    duration = [2,5,1,1] # in days
+    import pandas as pd
+    import datetime
+    for i,e in enumerate(events):
+        time = datetime.datetime.strptime(e,'%Y-%m-%d')
+        timeseries = pd.date_range(time, periods=24 * duration[i], freq='H')
+        if not os.path.exists('./'+e.replace('-','_')):
+            os.makedirs('./'+e.replace('-','_'))
+        for time in timeseries:
+            fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
+            if not os.path.exists(fname):
+                time_str = datetime.datetime.strftime(time,'%Y-%m-%d %H:%M')
+                
+                query.retrieve_data(['HZEROCL','TOT_PREC'],time_str,coord_bounds=([6.7,46],[7.6,46.4]))
+                fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
+                query.save_netcdf(fname)
+    

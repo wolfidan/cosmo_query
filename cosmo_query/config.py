@@ -4,8 +4,8 @@ import numpy as np
 
 ELA_ADRESS = 'ela.cscs.ch'
 KESCH_ADRESS = 'kesch.cscs.ch'
-USERNAME = 'wolfensb'
-PASSWORD = 'Ikot04081415'
+USERNAME = 'Enter username here'
+PASSWORD = 'Enter password here'
 LOCAL_FOLDER = '/tmp/'
 FX_DIR = '/oprusers/osm/opr/bin/'
 COSMO_ROOT_DIR = '/store/s83/'
