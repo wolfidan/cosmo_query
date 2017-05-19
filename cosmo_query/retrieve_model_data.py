@@ -55,8 +55,12 @@ class SSH(object):
         # access a server that's not yet in the known_hosts file
         self.jump.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         # Make the connection
-        privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
-        mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
+        
+        if not password: # If no password set, use ssh key
+            privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
+            mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
+        else:
+            mykey = None
         self.jump.connect(address, username=username, password=password, 
                           look_for_keys=True, pkey = mykey) 
         
