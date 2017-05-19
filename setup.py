@@ -62,6 +62,7 @@ setup(  name        = "cosmo_query",
           'numpy',
           'scipy',
           'netCDF4',
+          'paramiko'
         ],
         zip_safe=False,
         ext_modules = [_interp1_c,_radar_interp_c ]
