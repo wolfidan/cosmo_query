@@ -33,7 +33,7 @@ class SSH(object):
          Create one and reuse it for all you queries...
     
     INPUTS:
-        address : adress of the server, either a IP or a name, ex. ela.cscs.ch
+        adress : adress of the server, either a IP or a name, ex. ela.cscs.ch
         username : the username to be used, for example "wolfensb"
         password : (optional) the corresponding password. If not set, it will
                    be assumed that a ssh key has been setup on the server. THIS
@@ -43,12 +43,12 @@ class SSH(object):
         connection : a ssh connection that can be used to send commands remote-
                      ly to the distant server
     """    
-    def __init__(self, address, username, password = None):
+    def __init__(self, adress, username, password = None):
         # Let the user know we're connecting to the server
         print("Connecting to server...")
         # Create a new SSH client
         self.jump = paramiko.SSHClient()
-        self.jump_adress = address
+        self.jump_adress = adress
         self.target = None
         self.target_adress = None
         # The following line is required if you want the script to be able to 
@@ -61,7 +61,8 @@ class SSH(object):
             mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
         else:
             mykey = None
-        self.jump.connect(address, username=username, password=password, 
+            
+        self.jump.connect(adress, username=username, password=password, 
                           look_for_keys=True, pkey = mykey) 
         
     def open_channel(self,adress, username, password = None):
@@ -74,7 +75,7 @@ class SSH(object):
              you are connected to
         
         INPUTS:
-            address : adress of the server, either a IP or a name, ex. 
+            adress : adress of the server, either a IP or a name, ex. 
                 kesch.cscs.ch
             username : the username to be used, for example "wolfensb"
             password : (optional) the corresponding password. If not set, it will
@@ -92,8 +93,15 @@ class SSH(object):
         self.target = paramiko.SSHClient()
         self.target_adress = adress
         self.target.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.target.connect(adress, username=username,
-                            look_for_keys=True, sock = channel)
+        
+        if not password: # If no password set, use ssh key
+            privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
+            mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
+        else:
+            mykey = None
+                    
+        self.target.connect(adress, username=username, password = password,
+                            look_for_keys=True, sock = channel, pkey = mykey)
         
     def send_command(self, command, client = 'jump'):
         """
