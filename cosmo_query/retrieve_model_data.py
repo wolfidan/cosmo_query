@@ -11,7 +11,6 @@ import paramiko
 import os
 import inspect
 import datetime
-import subprocess
 import netCDF4
 import re
 
@@ -59,21 +58,15 @@ class SSH(object):
         if not password: # If no password set, use ssh key
             privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
             mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
-        else:
-            mykey = None
-            
-        self.jump.connect(adress, username=username, password=password, 
-                          look_for_keys=True, pkey = mykey) 
-
-        if not password: # If no password set, use ssh key
-            privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
-            mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
-            self.jump.connect(adress, username=username, password = password,
-                look_for_keys=True, pkey = mykey)            
+            self.jump.connect(adress, username=username, look_for_keys=True, 
+                              pkey = mykey)            
         else:
             self.jump.connect(adress, username=username, password = password,
                 allow_agent = True)
-            
+        
+        # Open ftp
+        self.ftp = self.jump.open_sftp()
+        
     def open_channel(self,adress, username, password = None):
         """
         FUNCTION:
@@ -106,7 +99,7 @@ class SSH(object):
         if not password: # If no password set, use ssh key
             privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
             mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
-            self.target.connect(adress, username=username, password = password,
+            self.target.connect(adress, username=username,
                 look_for_keys=True, sock = channel, pkey = mykey)            
         else:
             self.target.connect(adress, username=username, password = password,
@@ -443,9 +436,7 @@ class Query(object):
             self.connection.send_command(cmd_convert, client = 'target')        
             
             # Download corresponding data to localhost
-            cmd_scp = 'scp ' + self.connection.jump_adress + ':~/' + name_PMSL_file + ' ' + cfg.LOCAL_FOLDER
-            subprocess.call(cmd_scp, shell = True)        
-            
+            self.connection.ftp.get(str(name_PMSL_file),str(cfg.LOCAL_FOLDER + name_PMSL_file))            
 
         pmsl_f0  = netCDF4.Dataset(cfg.LOCAL_FOLDER+name_PMSL_file)
         
@@ -495,10 +486,10 @@ class Query(object):
             self.connection.send_command(cmd_convert, client = 'target')
 
             # (4) DOWNLOAD
-            cmd_scp = 'scp ' + self.connection.jump_adress + ':~/convert' +\
-                str(i)+'.nc ' + cfg.LOCAL_FOLDER     
+            fname = 'convert' + str(i)+'.nc'
+            # Download corresponding data to localhost
+            self.connection.ftp.get(str(fname),str(cfg.LOCAL_FOLDER + fname))            
 
-            subprocess.call(cmd_scp, shell = True)      
             
    
         f0 = netCDF4.Dataset(cfg.LOCAL_FOLDER + '/convert0.nc')
@@ -765,29 +756,8 @@ def load_netcdf(fname):
     return data
      
 if __name__ == '__main__':
-#    connection = ssh(ELA_ADRESS,USERNAME,PASSWORD)
-#    connection.openChannel(KESCH_ADRESS,USERNAME)
+    connection = SSH(ELA_ADRESS,USERNAME,PASSWORD)
+    connection.openChannel(KESCH_ADRESS,USERNAME)
     query = COSMO_query(1)
-#    time_str = '2017-01-12 14:30'
-#    fcst_start = '2017-01-12 12:00'
 
-                
-                
-    events = ['2016-12-17','2016-12-30','2017-01-06','2017-01-15']
-    duration = [2,5,1,1] # in days
-    import pandas as pd
-    import datetime
-    for i,e in enumerate(events):
-        time = datetime.datetime.strptime(e,'%Y-%m-%d')
-        timeseries = pd.date_range(time, periods=24 * duration[i], freq='H')
-        if not os.path.exists('./'+e.replace('-','_')):
-            os.makedirs('./'+e.replace('-','_'))
-        for time in timeseries:
-            fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
-            if not os.path.exists(fname):
-                time_str = datetime.datetime.strftime(time,'%Y-%m-%d %H:%M')
-                
-                query.retrieve_data(['HZEROCL','TOT_PREC'],time_str,coord_bounds=([6.7,46],[7.6,46.4]))
-                fname =  './'+e.replace('-','_') +'/'+ datetime.datetime.strftime(time,'%Y_%m_%d_%H')+'.nc'
-                query.save_netcdf(fname)
     
