@@ -64,7 +64,16 @@ class SSH(object):
             
         self.jump.connect(adress, username=username, password=password, 
                           look_for_keys=True, pkey = mykey) 
-        
+
+        if not password: # If no password set, use ssh key
+            privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
+            mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
+            self.jump.connect(adress, username=username, password = password,
+                look_for_keys=True, pkey = mykey)            
+        else:
+            self.jump.connect(adress, username=username, password = password,
+                allow_agent = True)
+            
     def open_channel(self,adress, username, password = None):
         """
         FUNCTION:
@@ -97,11 +106,11 @@ class SSH(object):
         if not password: # If no password set, use ssh key
             privatekeyfile = os.path.expanduser('~/.ssh/id_rsa')
             mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
+            self.target.connect(adress, username=username, password = password,
+                look_for_keys=True, sock = channel, pkey = mykey)            
         else:
-            mykey = None
-                    
-        self.target.connect(adress, username=username, password = password,
-                            look_for_keys=True, sock = channel, pkey = mykey)
+            self.target.connect(adress, username=username, password = password,
+                sock = channel, allow_agent = True)
         
     def send_command(self, command, client = 'jump'):
         """
