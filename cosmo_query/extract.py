@@ -1039,7 +1039,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                    
                         model_data=var[:]
                         
-#                        coords_rad_loc = np.fliplr(coords_rad_loc).astype('float32')
+                        coords_rad_loc = coords_rad_loc.astype('float32')
                 
                         rad_interp_values = get_all_radar_pts(len(rrange),\
                                           coords_rad_loc,all_h[vert_idx],model_data, \
