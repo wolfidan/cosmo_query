@@ -14,27 +14,27 @@ from cosmo_query import config, SSH, Query
 from cosmo_query import save_netcdf, load_netcdf
 from cosmo_query import extract, coords_profile
 ##
-## We initiate a connection to ela.cscs.ch, with username and password
-## specified in the config.py file (password is not needed if ssh key is 
-## defined)
-#connection = SSH(config.ELA_ADRESS,'wolfensb')
+# We initiate a connection to ela.cscs.ch, with username and password
+# specified in the config.py file (password is not needed if ssh key is 
+# defined)
+connection = SSH(config.ELA_ADRESS,'wolfensb')
 #
-## We also need to open a channel to kesch.cscs.ch since it 
-#connection.open_channel(config.KESCH_ADRESS,'wolfensb')
-#
-## Now that the connection is setup we can create a Query instance
-#query = Query(connection)
-#
-## And use this query to retrieve some data
-#
-#variables = ['T','P','QV'] # we want temperature and pressure
-#date = '2016-05-31 12:30' # for the 31th May 2016 at 12h30
-#model_res = 'fine' # at high resolution
-#mode = 'analysis' # In analysis mode
-#coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
-#
-#data = query.retrieve_data(variables, date, model_res = 'fine', 
-#                          mode = 'analysis', coord_bounds = coord_bounds)
+# We also need to open a channel to kesch.cscs.ch since it 
+connection.open_channel(config.KESCH_ADRESS,'wolfensb')
+
+# Now that the connection is setup we can create a Query instance
+query = Query(connection)
+
+# And use this query to retrieve some data
+
+variables = ['T','P','QV'] # we want temperature and pressure
+date = '2016-05-31 12:30' # for the 31th May 2016 at 12h30
+model_res = 'fine' # at high resolution
+mode = 'analysis' # In analysis mode
+coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+
+data = query.retrieve_data(variables, date, model_res = 'fine', 
+                          mode = 'analysis', coord_bounds = coord_bounds)
 #
 ## We can save this data to a netcdf
 #save_netcdf(data,'myfile.nc')
@@ -78,3 +78,14 @@ ppi_T = extract(data,['T'],'PPI',options_PPI)
 
 # Missing points correspond to areas where either all  the signal is lost 
 # (beam hit a mountain) or is located above COSMO domain
+
+# 5) RHI profile at 47 degree azimuth
+options_RHI = {}
+options_RHI['beamwidth'] = 1.5 # 1.5 deg 3dB beamwidth, as MXPol
+options_RHI['azimuth'] = 47
+options_RHI['rrange'] = np.arange(200,10000,75) # from 0.2 to 10 km with a res of 75 m
+options_RHI['npts_quad'] = [3,3] # 3 quadrature points in azimuthal, 3 in elevational directions
+options_RHI['rpos'] = [7.0923,46.1134,500] # Radar position in lon/lat/alt
+options_RHI['refraction_method'] = 1 # 1 = standard 4/3, 2 = ODE refraction 
+
+rhi_T = extract(data,['T'],'RHI',options_RHI) 

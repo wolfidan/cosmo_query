@@ -13,6 +13,7 @@ import inspect
 import datetime
 import netCDF4
 import re
+import uuid
 
 # Module imports
 from metaarray import MetaArray
@@ -50,6 +51,7 @@ class SSH(object):
         self.jump_adress = adress
         self.target = None
         self.target_adress = None
+        self.username = username
         # The following line is required if you want the script to be able to 
         # access a server that's not yet in the known_hosts file
         self.jump.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -354,6 +356,13 @@ class Query(object):
         
         """ 
         
+        # First create temporary folder
+        temp_folder = '/users/'+self.connection.username + \
+            '/tmp_' + str(uuid.uuid4()).replace('-','_') + '/'
+        cmd_mdkir  = 'mkdir ' + temp_folder
+        print('Creating temporary folder in home folder :'+temp_folder)
+        self.connection.send_command(cmd_mdkir, client = 'target')
+            
         # Check coordinates
         if coord_bounds:
             try:
@@ -430,13 +439,14 @@ class Query(object):
             name_PMSL_file = 'PMSL_cosmo_7.nc'
             
         if not os.path.exists(cfg.LOCAL_FOLDER + name_PMSL_file):
-            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ~/PMSL.grb ' + cosmo_f0
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o ~/'+ name_PMSL_file +' nc ~/PMSL.grb'
+            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ' + temp_folder + '/PMSL.grb ' + cosmo_f0
+            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder + name_PMSL_file +' nc '+temp_folder+'/PMSL.grb'
             self.connection.send_command(cmd_filter, client = 'target')
             self.connection.send_command(cmd_convert, client = 'target')        
             
             # Download corresponding data to localhost
-            self.connection.ftp.get(str(name_PMSL_file),str(cfg.LOCAL_FOLDER + name_PMSL_file))            
+            self.connection.ftp.get(str(temp_folder + name_PMSL_file),
+                                    str(cfg.LOCAL_FOLDER + name_PMSL_file))            
 
         pmsl_f0  = netCDF4.Dataset(cfg.LOCAL_FOLDER+name_PMSL_file)
         
@@ -447,8 +457,8 @@ class Query(object):
         if not coord_bounds:
             j_min = 1
             i_min = 1
-            j_max = lat.shape[1]
-            i_max = lat.shape[0]
+            j_max = lat.shape[0]
+            i_max = lat.shape[1] 
             
         else:
             # Get indexes in i and j local model indexes to crop
@@ -469,26 +479,28 @@ class Query(object):
         for i,f in enumerate(files_to_get):
             # (1) FILTER
             cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
-                ' -o ~/filtered' + str(i) + '.grb ' + f 
+                ' -o '+temp_folder+'/filtered' + str(i) + '.grb ' + f 
             self.connection.send_command(cmd_filter, client = 'target')
 
             # (2) CROP
             cmd_crop = cfg.FX_DIR + 'fxcrop --force -i ' + \
                 ','.join([str(i_min),str(i_max)]) + \
                 ' -j ' + ','.join([str(j_min),str(j_max)]) + \
-                ' -o ~/crop' + str(i) + '.grb ~/filtered'+str(i)+'.grb'
+                ' -o '+temp_folder+'/crop' + str(i) + '.grb '+temp_folder+'/filtered'+str(i)+'.grb'
             self.connection.send_command(cmd_crop, client = 'target')  
 
             # (3) CONVERT TO NETCDF
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o ~/convert' + \
+            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+temp_folder+'/convert' + \
                 str(i) + '.nc' + \
-                ' nc ~/crop'+str(i)+'.grb'
+                ' nc '+temp_folder+'/crop'+str(i)+'.grb'
             self.connection.send_command(cmd_convert, client = 'target')
 
             # (4) DOWNLOAD
             fname = 'convert' + str(i)+'.nc'
             # Download corresponding data to localhost
-            self.connection.ftp.get(str(fname),str(cfg.LOCAL_FOLDER + fname))            
+            print('Retrieving file '+temp_folder + '/' + str(fname))
+            self.connection.ftp.get(str(temp_folder + '/' + str(fname)),
+                                    str(cfg.LOCAL_FOLDER + fname))            
 
             
    
@@ -623,6 +635,13 @@ class Query(object):
             
         variables['retrieved_variables'] = np.array(valid_vars )
         self.data = variables
+        
+        
+        # Finally delete temporary folder
+        cmd_rm  = 'rm -r ' + temp_folder
+        self.connection.send_command(cmd_rm, client = 'target')
+            
+        
         return variables
 
 def save_netcdf(data, fname):
