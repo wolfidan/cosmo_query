@@ -13,18 +13,18 @@ float* get_all_radar_pts(float *output, int len, float *coords_rad_pts, int crp_
     
  float radar_pts[crp_x];
  int i=0;
- int llc_x=0;
- int llc_y=0;
- int current_llc_x=0;
- int current_llc_y=0;
+ int llc_i=0;
+ int llc_j=0;
+ int current_llc_i=0;
+ int current_llc_j=0;
  int flag=1;
  
  float interp_topo=0.0;
- float diff_x=0;
- float diff_y=0;
+ float diff_i=0;
+ float diff_j=0;
  float v[4];
- float x=0.0;
- float y=0.0;
+ float pos_i=0.0;
+ float pos_j=0.0;
  
  float pos_radar_bin[2];
  float coords_neighbours[8];
@@ -40,25 +40,25 @@ float* get_all_radar_pts(float *output, int len, float *coords_rad_pts, int crp_
  int closest_1, closest_2;
  
  for(i=0;i<crp_x;i++){
-    pos_radar_bin[0]=(coords_rad_pts[i*crp_y+0]-llc_cosmo[0])/res_cosmo[0];
-    pos_radar_bin[1]=(coords_rad_pts[i*crp_y+1]-llc_cosmo[1])/res_cosmo[1];
-    llc_x=floor(pos_radar_bin[0]);
-    llc_y=floor(pos_radar_bin[1]);
-    current_llc_x=llc_x;
-    current_llc_y=llc_y;
-    int neighb[4][2]={{llc_x,llc_y},{llc_x,llc_y+1},{llc_x+1,llc_y},{llc_x+1,llc_y+1}};
+    pos_radar_bin[0]=(coords_rad_pts[i*crp_y+0]-llc_cosmo[0])/res_cosmo[0];/* lon */
+    pos_radar_bin[1]=(coords_rad_pts[i*crp_y+1]-llc_cosmo[1])/res_cosmo[1];/* lat */
+    llc_i = floor(pos_radar_bin[1]); /* here i is the ver. coordinate (corresponding to lat) */
+    llc_j = floor(pos_radar_bin[0]);  /* here j is the hor coordinate (corresponding to lon) */
+    current_llc_i=llc_i;
+    current_llc_j=llc_j;
+    int neighb[4][2]={{llc_i,llc_j},{llc_i,llc_j+1},{llc_i+1,llc_j},{llc_i+1,llc_j+1}};
     /* get values at neighbours */
     flag=1;
     
     /* Interpolate the topography bilinearly to the radar point position */
-    x=fmod(pos_radar_bin[0],1.0);
-    y=fmod(pos_radar_bin[1],1.0);
-    diff_x=1.0-x;
-    diff_y=1.0-y;   
+    pos_i = fmod(pos_radar_bin[1],1.0);
+    pos_j = fmod(pos_radar_bin[0],1.0);
+    diff_i=1.0-pos_i;
+    diff_j=1.0-pos_j;   
     for(k=0;k<4;k++){
 	v[k]=model_heights[(mh_x-1)*mh_y*mh_z+neighb[k][0]*mh_z+neighb[k][1]];
     }
-    interp_topo=diff_x*diff_y*v[0]+x*v[2]*diff_y+diff_x*v[1]*y+x*y*v[3];
+    interp_topo=diff_i*diff_j*v[0]+pos_i*v[2]*diff_j+diff_i*v[1]*pos_j+pos_i*pos_j*v[3];
     if(interp_topo<radar_heights[i]){
     for(j=0;j<4;j++){
 	int n[2]={neighb[j][0],neighb[j][1]};
@@ -141,10 +141,10 @@ float trilinear_interp(float *c_n, int c_n_x, float *v_n, int v_n_x, float *pos_
 
     float v[4];
     float interp=0;
-    float diff_x=0;
-    float diff_y=0;
-    float x=0.0;
-    float y=0.0;
+    float diff_i=0;
+    float diff_j=0;
+    float pos_i=0.0;
+    float pos_j=0.0;
     int j=0;
     
     for(j=0;j<c_n_x/2;j++){
@@ -152,14 +152,14 @@ float trilinear_interp(float *c_n, int c_n_x, float *v_n, int v_n_x, float *pos_
 	/*printf("%f %f %f %f \n",v_n[2*j+1],v_n[2*j],c_n[2*j],c_n[2*j+1]);*/
     }
 
-    x=fmod(pos_radar[0],1.0);
-    y=fmod(pos_radar[1],1.0);
+    pos_i = fmod(pos_radar[1],1.0);
+    pos_j = fmod(pos_radar[0],1.0);
 
-    diff_x=1.0-x;
-    diff_y=1.0-y;
+    diff_i=1.0-pos_i;
+    diff_j=1.0-pos_j;
 
     /* printf("pos: %f .. %f\n",x,y);*/
-    interp=diff_x*diff_y*v[0]+x*v[2]*diff_y+diff_x*v[1]*y+x*y*v[3];
+    interp=diff_i*diff_j*v[0]+pos_i*v[2]*diff_j+diff_i*v[1]*pos_j+pos_i*pos_j*v[3];
     return interp;
 }
 
