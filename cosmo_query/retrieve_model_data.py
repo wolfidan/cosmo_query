@@ -14,6 +14,7 @@ import datetime
 import netCDF4
 import re
 import uuid
+import shutil
 
 # Module imports
 from metaarray import MetaArray
@@ -303,7 +304,7 @@ class Query(object):
       
     def retrieve_data(self, variables, date, model_res = 'fine', 
                           mode = 'analysis', forecast_start = None, 
-                          coord_bounds = None):
+                          coord_bounds = None, vert_levels = None):
         
         """
         FUNCTION:
@@ -338,6 +339,8 @@ class Query(object):
                 ([lon_llc,lat_llc],[lon_upr,lat_upr]) where llc
                 is the lower left corner and upr the upper right 
                 corner
+            vert_levels : (optional) the vertical levels to be retrieved (for
+                3D variables), if not provided all levels will be retrieved
         OUTPUTS:
             data : a dictionary containing the data, every retrieved variable
                 is a special numpy array with an addiitional field called
@@ -355,14 +358,28 @@ class Query(object):
                 a given variable with myvar.metdata['mapping']
         
         """ 
-        
-        # First create temporary folder
-        temp_folder = '/users/'+self.connection.username + \
-            '/tmp_' + str(uuid.uuid4()).replace('-','_') + '/'
-        cmd_mdkir  = 'mkdir ' + temp_folder
-        print('Creating temporary folder in home folder :'+temp_folder)
-        self.connection.send_command(cmd_mdkir, client = 'target')
+        # Show warning converning vertical levels
+        if vert_levels:
+            msg = """
+            You have specified vertical levels
+            Please note that all 2D variables will be ignored when using this
+            option...
+            """
+            print(msg)
             
+        # First create remote temporary folder
+        folder_code = '/tmp_' + str(uuid.uuid4()).replace('-','_') # unique id
+        temp_folder_r = '/users/'+self.connection.username + '/' + \
+            folder_code + '/'
+        cmd_mdkir  = 'mkdir ' + temp_folder_r
+        print('Creating temporary folder in home folder :'+temp_folder_r)
+        self.connection.send_command(cmd_mdkir, client = 'target')
+
+        # Then we create local temporary folder
+        temp_folder_l = cfg.LOCAL_FOLDER +'/' + folder_code +'/'
+        print('Creating local temporary folder in :' + temp_folder_l)
+        os.makedirs(temp_folder_l)
+
         # Check coordinates
         if coord_bounds:
             try:
@@ -439,13 +456,16 @@ class Query(object):
             name_PMSL_file = 'PMSL_cosmo_7.nc'
             
         if not os.path.exists(cfg.LOCAL_FOLDER + name_PMSL_file):
-            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ' + temp_folder + '/PMSL.grb ' + cosmo_f0
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder + name_PMSL_file +' nc '+temp_folder+'/PMSL.grb'
+            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ' + \
+                temp_folder_r + '/PMSL.grb ' + cosmo_f0 
+            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder_r \
+                + name_PMSL_file +' nc ' + temp_folder_r + '/PMSL.grb'
+                
             self.connection.send_command(cmd_filter, client = 'target')
             self.connection.send_command(cmd_convert, client = 'target')        
             
             # Download corresponding data to localhost
-            self.connection.ftp.get(str(temp_folder + name_PMSL_file),
+            self.connection.ftp.get(str(temp_folder_r + name_PMSL_file),
                                     str(cfg.LOCAL_FOLDER + name_PMSL_file))            
 
         pmsl_f0  = netCDF4.Dataset(cfg.LOCAL_FOLDER+name_PMSL_file)
@@ -478,36 +498,41 @@ class Query(object):
         # Now treat files
         for i,f in enumerate(files_to_get):
             # (1) FILTER
-            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
-                ' -o '+temp_folder+'/filtered' + str(i) + '.grb ' + f 
+            if vert_levels:
+                cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
+                    '-l '+','.join(vert_levels)+\
+                    ' -o '+temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
+            else:
+                cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
+                    ' -o '+temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
             self.connection.send_command(cmd_filter, client = 'target')
-
             # (2) CROP
             cmd_crop = cfg.FX_DIR + 'fxcrop --force -i ' + \
                 ','.join([str(i_min),str(i_max)]) + \
                 ' -j ' + ','.join([str(j_min),str(j_max)]) + \
-                ' -o '+temp_folder+'/crop' + str(i) + '.grb '+temp_folder+'/filtered'+str(i)+'.grb'
+                ' -o '+temp_folder_r + '/crop' + str(i) + '.grb '+ \
+                temp_folder_r +'/filtered'+str(i)+'.grb'
             self.connection.send_command(cmd_crop, client = 'target')  
 
             # (3) CONVERT TO NETCDF
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+temp_folder+'/convert' + \
-                str(i) + '.nc' + \
-                ' nc '+temp_folder+'/crop'+str(i)+'.grb'
+            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder_r \
+                +'/convert' + str(i) + '.nc' + ' nc ' + temp_folder_r + \
+                '/crop'+str(i)+'.grb'
             self.connection.send_command(cmd_convert, client = 'target')
 
             # (4) DOWNLOAD
             fname = 'convert' + str(i)+'.nc'
             # Download corresponding data to localhost
-            print('Retrieving file '+temp_folder + '/' + str(fname))
-            self.connection.ftp.get(str(temp_folder + '/' + str(fname)),
-                                    str(cfg.LOCAL_FOLDER + fname))            
+            print('Retrieving file ' + temp_folder_r + '/' + str(fname))
+            self.connection.ftp.get(str(temp_folder_r + '/' + str(fname)),
+                                    str(temp_folder_l + fname))            
 
             
    
-        f0 = netCDF4.Dataset(cfg.LOCAL_FOLDER + '/convert0.nc')
+        f0 = netCDF4.Dataset(temp_folder_l + '/convert0.nc')
 
         if interpolate_time:
-            f1 = netCDF4.Dataset(cfg.LOCAL_FOLDER + '/convert1.nc')
+            f1 = netCDF4.Dataset(temp_folder_l + '/convert1.nc')
             delta = float((t - t0).seconds)
 
         variables = {}
@@ -638,9 +663,12 @@ class Query(object):
         
         
         # Finally delete temporary folder
-        cmd_rm  = 'rm -r ' + temp_folder
+        cmd_rm  = 'rm -r ' + temp_folder_r
         self.connection.send_command(cmd_rm, client = 'target')
-            
+        
+        
+        # Local temp folder
+        shutil.rmtree(temp_folder_l, ignore_errors=True)
         
         return variables
 
