@@ -15,6 +15,7 @@ import netCDF4
 import re
 import uuid
 import shutil
+import fnmatch
 
 # Module imports
 from metaarray import MetaArray
@@ -173,6 +174,8 @@ class Query(object):
         self.connection = connection
         self.data = None
         self.valid_vars = None
+        self.temp_folder_r = None
+        self.temp_folder_l = None
         
     def get_available_vars(self, date, model_res = 'fine', 
                            mode = 'analysis'):
@@ -299,12 +302,46 @@ class Query(object):
         else:
             raise ValueError("Invalid mode, must be 'forecast' or 'analysis'")
         
+        # Stat the file
+        try:
+            print(self.connection.ftp.stat(fname))
+        except:
+            msg = """
+            File {:s} was not found on server, we will try to find in the MCH
+            archives...
+            """.format(fname)
+            
+            # Try to guess the .tar filename in the archives
+            part_1,la_name,part_2 = re.split(r'(LA\d{2})',fname)
+            arch_name = re.findall(r'\/(\d{8})\/',part_2)[0] + '.tar'
+            
+            arch_name_full = cfg.COSMO_ARCHIVE_DIR + la_name + '/' + arch_name
+            
+            try:
+                print(self.connection.ftp.stat(arch_name_full))
+            except:
+                print('No archive file could be found')
+                print('Sorry this is the end, I am helpless')
+                print('Aborting...')
+                raise
+            
+            print('Trying to untar the requested file...')
+            
+            fname_bname = os.path.basename(fname)
+            
+            untar_cmd = 'tar -xvf ' + arch_name_full + ' ' + part_2[1:] + \
+            ' -O > ' + self.temp_folder_r + '/' + fname_bname
+            print(untar_cmd)
+            self.connection.send_command(untar_cmd, client = 'target')
+            
+            fname = self.temp_folder_r + '/' + fname_bname
         return fname
     
       
     def retrieve_data(self, variables, date, model_res = 'fine', 
                           mode = 'analysis', forecast_start = None, 
-                          coord_bounds = None, vert_levels = None):
+                          coord_bounds = None, vert_levels = None, 
+                          assign_heights = True):
         
         """
         FUNCTION:
@@ -341,6 +378,7 @@ class Query(object):
                 corner
             vert_levels : (optional) the vertical levels to be retrieved (for
                 3D variables), if not provided all levels will be retrieved
+            assign_heights : (optional)
         OUTPUTS:
             data : a dictionary containing the data, every retrieved variable
                 is a special numpy array with an addiitional field called
@@ -359,7 +397,7 @@ class Query(object):
         
         """ 
         # Show warning converning vertical levels
-        if vert_levels:
+        if vert_levels != None:
             msg = """
             You have specified vertical levels
             Please note that all 2D variables will be ignored when using this
@@ -369,16 +407,16 @@ class Query(object):
             
         # First create remote temporary folder
         folder_code = '/tmp_' + str(uuid.uuid4()).replace('-','_') # unique id
-        temp_folder_r = '/users/'+self.connection.username + '/' + \
+        self.temp_folder_r = '/users/'+self.connection.username + '/' + \
             folder_code + '/'
-        cmd_mdkir  = 'mkdir ' + temp_folder_r
-        print('Creating temporary folder in home folder :'+temp_folder_r)
+        cmd_mdkir  = 'mkdir ' + self.temp_folder_r
+        print('Creating temporary folder in home folder :'+self.temp_folder_r)
         self.connection.send_command(cmd_mdkir, client = 'target')
 
         # Then we create local temporary folder
-        temp_folder_l = cfg.LOCAL_FOLDER +'/' + folder_code +'/'
-        print('Creating local temporary folder in :' + temp_folder_l)
-        os.makedirs(temp_folder_l)
+        self.temp_folder_l = cfg.LOCAL_FOLDER +'/' + folder_code +'/'
+        print('Creating local temporary folder in :' + self.temp_folder_l)
+        os.makedirs(self.temp_folder_l)
 
         # Check coordinates
         if coord_bounds:
@@ -455,84 +493,115 @@ class Query(object):
         else:
             name_PMSL_file = 'PMSL_cosmo_7.nc'
             
-        if not os.path.exists(cfg.LOCAL_FOLDER + name_PMSL_file):
-            cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ' + \
-                temp_folder_r + '/PMSL.grb ' + cosmo_f0 
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder_r \
-                + name_PMSL_file +' nc ' + temp_folder_r + '/PMSL.grb'
+        
+        # Here is why things might go wrong so we put a try/except and keep 
+        # a list of commands that might have failed
+        
+        serv_cmds = []
+        try:
+            if not os.path.exists(cfg.LOCAL_FOLDER + name_PMSL_file):
+                cmd_filter = cfg.FX_DIR + 'fxfilter --force -s PMSL -o ' + \
+                    self.temp_folder_r + '/PMSL.grb ' + cosmo_f0 
+                cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ self.temp_folder_r \
+                    + name_PMSL_file +' nc ' + self.temp_folder_r + '/PMSL.grb'
+                    
+                serv_cmds.append(cmd_filter)
+                serv_cmds.append(cmd_convert)
                 
-            self.connection.send_command(cmd_filter, client = 'target')
-            self.connection.send_command(cmd_convert, client = 'target')        
+                self.connection.send_command(cmd_filter, client = 'target')
+                self.connection.send_command(cmd_convert, client = 'target')        
+                
+                # Download corresponding data to localhost
+                self.connection.ftp.get(str(self.temp_folder_r + name_PMSL_file),
+                                        str(cfg.LOCAL_FOLDER + name_PMSL_file))            
+    
+            pmsl_f0  = netCDF4.Dataset(cfg.LOCAL_FOLDER+name_PMSL_file)
             
-            # Download corresponding data to localhost
-            self.connection.ftp.get(str(temp_folder_r + name_PMSL_file),
-                                    str(cfg.LOCAL_FOLDER + name_PMSL_file))            
-
-        pmsl_f0  = netCDF4.Dataset(cfg.LOCAL_FOLDER+name_PMSL_file)
-        
-        # Get latitude and longitude of files
-        lat = pmsl_f0.variables['lat_1'][:]
-        lon = pmsl_f0.variables['lon_1'][:]
-        
-        if not coord_bounds:
-            j_min = 1
-            i_min = 1
-            j_max = lat.shape[0]
-            i_max = lat.shape[1] 
+            # Get latitude and longitude of files
+            lat = pmsl_f0.variables['lat_1'][:]
+            lon = pmsl_f0.variables['lon_1'][:]
             
-        else:
-            # Get indexes in i and j local model indexes to crop
-            domain = np.logical_and(np.logical_and(lat < upr[1], 
-                                                   lon < upr[0]),
-                                                   np.logical_and(lat > llc[1],
-                                                                  lon > llc[0]))
-            idx = np.where(domain == 1)
-            
-            j_min = np.min(idx[0])
-            j_max = np.max(idx[0])
-            i_min = np.min(idx[1])
-            i_max = np.max(idx[1])
-            
-        pmsl_f0.close()
-
-        # Now treat files
-        for i,f in enumerate(files_to_get):
-            # (1) FILTER
-            if vert_levels:
-                cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
-                    '-l '+','.join(vert_levels)+\
-                    ' -o '+temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
+            if not coord_bounds:
+                j_min = 1
+                i_min = 1
+                j_max = lat.shape[0]
+                i_max = lat.shape[1] 
+                
             else:
-                cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
-                    ' -o '+temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
-            self.connection.send_command(cmd_filter, client = 'target')
-            # (2) CROP
-            cmd_crop = cfg.FX_DIR + 'fxcrop --force -i ' + \
-                ','.join([str(i_min),str(i_max)]) + \
-                ' -j ' + ','.join([str(j_min),str(j_max)]) + \
-                ' -o '+temp_folder_r + '/crop' + str(i) + '.grb '+ \
-                temp_folder_r +'/filtered'+str(i)+'.grb'
-            self.connection.send_command(cmd_crop, client = 'target')  
+                # Get indexes in i and j local model indexes to crop
+                domain = np.logical_and(np.logical_and(lat < upr[1], 
+                                                       lon < upr[0]),
+                                                       np.logical_and(lat > llc[1],
+                                                                      lon > llc[0]))
+                idx = np.where(domain == 1)
+                
+                j_min = np.min(idx[0])
+                j_max = np.max(idx[0])
+                i_min = np.min(idx[1])
+                i_max = np.max(idx[1])
+                
+            pmsl_f0.close()
+    
+            # Now treat files
+            for i,f in enumerate(files_to_get):
+                # (1) FILTER
+                if vert_levels != None:
+                    cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
+                        ' -l '+','.join(str(i) for i in vert_levels)+\
+                        ' -o '+self.temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
+                else:
+                    cmd_filter = cfg.FX_DIR + 'fxfilter --force -s ' + ','.join(valid_vars) + \
+                        ' -o '+self.temp_folder_r + '/filtered' + str(i) + '.grb ' + f 
+                self.connection.send_command(cmd_filter, client = 'target')
+                # (2) CROP
+                cmd_crop = cfg.FX_DIR + 'fxcrop --force -i ' + \
+                    ','.join([str(i_min),str(i_max)]) + \
+                    ' -j ' + ','.join([str(j_min),str(j_max)]) + \
+                    ' -o '+self.temp_folder_r + '/crop' + str(i) + '.grb '+ \
+                    self.temp_folder_r +'/filtered'+str(i)+'.grb'
+                self.connection.send_command(cmd_crop, client = 'target')  
+    
+                # (3) CONVERT TO NETCDF
+                cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ self.temp_folder_r \
+                    +'/convert' + str(i) + '.nc' + ' nc ' + self.temp_folder_r + \
+                    '/crop'+str(i)+'.grb'
+                self.connection.send_command(cmd_convert, client = 'target')
+    
+                serv_cmds.append(cmd_filter)
+                serv_cmds.append(cmd_crop)
+                serv_cmds.append(cmd_convert)
+                
+                # (4) DOWNLOAD
+                fname = 'convert' + str(i)+'.nc'
+                # Download corresponding data to localhost
+                print('Retrieving file ' + self.temp_folder_r + '/' + str(fname))
+                self.connection.ftp.get(str(self.temp_folder_r + '/' + str(fname)),
+                                        str(self.temp_folder_l + fname))
+                
+                
 
-            # (3) CONVERT TO NETCDF
-            cmd_convert = cfg.FX_DIR + 'fxconvert --force -o '+ temp_folder_r \
-                +'/convert' + str(i) + '.nc' + ' nc ' + temp_folder_r + \
-                '/crop'+str(i)+'.grb'
-            self.connection.send_command(cmd_convert, client = 'target')
+                
+        except:
+            print('Something has failed on the server side...')
+            print('Please check manually if any of these commands fails :')
+            for cmd in serv_cmds:
+                print(cmd)
+            print('---')
+            print('The query will now abort')
 
-            # (4) DOWNLOAD
-            fname = 'convert' + str(i)+'.nc'
-            # Download corresponding data to localhost
-            print('Retrieving file ' + temp_folder_r + '/' + str(fname))
-            self.connection.ftp.get(str(temp_folder_r + '/' + str(fname)),
-                                    str(temp_folder_l + fname))            
-
+            # Delete local and remote temp folders
+            cmd_rm  = 'rm -r ' + self.temp_folder_r
+            self.connection.send_command(cmd_rm, client = 'target')
+            shutil.rmtree(self.temp_folder_l, ignore_errors=True)
             
-   
-        f0 = netCDF4.Dataset(temp_folder_l + '/convert0.nc')
+            os.remove(cfg.LOCAL_FOLDER+name_PMSL_file)
+            
+            return
+        
+        f0 = netCDF4.Dataset(self.temp_folder_l + '/convert0.nc')
 
         if interpolate_time:
-            f1 = netCDF4.Dataset(temp_folder_l + '/convert1.nc')
+            f1 = netCDF4.Dataset(self.temp_folder_l + '/convert1.nc')
             delta = float((t - t0).seconds)
 
         variables = {}
@@ -571,19 +640,40 @@ class Query(object):
             elif 'lat_' in  var or 'lon_' in var :
                 variables[var] = MetaArray(f0.variables[var])
                 for key in f0.variables[var].__dict__.keys():
-                    variables[var].metadata[key] = getattr(f0.variables[var],key)                
+                    variables[var].metadata[key] = getattr(f0.variables[var],key)      
+                    
+            elif 'z_' in  var and not assign_heights :
+                variables[var] = MetaArray(f0.variables[var])
+                for key in f0.variables[var].__dict__.keys():
+                    variables[var].metadata[key] = getattr(f0.variables[var],key)      
+                    
             elif 'grid_mapping' in var:
                 variables[var] = MetaArray(np.array(['nodata']))
                 # Add all info about the grid mapping to our output
                 for key in f0.variables[var].__dict__.keys():
                     variables[var].metadata[key] = getattr(f0.variables[var],key)
-                
+            
         for var in valid_vars:
             if var not in variables.keys():
                 print('Variable '+var+' could not be found in COSMO file')
                 print('It might not be present in MCH standard output')
                 valid_vars.remove(var)
 
+        # Assign ztypes to 3D variables
+        for  var in valid_vars:
+            # Some variables are on full levels (ex. W) some on half-levels
+            # (ex. T, P)
+            if variables[var].ndim == 3:
+                all_dim = f0.variables[var].dimensions
+                z_dim = fnmatch.filter(all_dim, 'z_*')[0]
+                z_dim_no = z_dim[-1]
+                if 'z_bnds_' + str(z_dim_no) in f0.variables.keys():
+                    variables[var].metadata['ztype'] = 'half'
+                    variables[var].metadata['zbnds'] = \
+                        f0.variables['z_bnds_' + str(mapping)][:]
+                else:
+                    variables[var].metadata['ztype'] = 'full'
+                
         f0.close()
         if interpolate_time:
             f1.close()
@@ -591,7 +681,7 @@ class Query(object):
         # Finally, we also assign the appropriate heights if at least one var 
         # is 3D
         
-        if np.any([variables[v].ndim == 3 for v in valid_vars]):
+        if np.any([variables[v].ndim == 3 for v in valid_vars]) and assign_heights:
             current_folder = inspect.getfile(inspect.currentframe()) 
             current_folder = os.path.dirname(current_folder)
             
@@ -615,17 +705,6 @@ class Query(object):
             x_heights = x_heights[i_min-1:i_max]
             y_heights = y_heights[j_min-1:j_max]
     
-            for var in valid_vars :  
-                mapping = variables[var].metadata['mapping']
-                
-                # Some variables are on full levels (ex. W) some on half-levels
-                # (ex. T, P)
-                if len(variables[var].shape) == 3:
-                    if len(variables[var][:]) == len(heights_cut) - 1:
-                        variables[var].metadata['ztype'] = 'half'
-                    elif len(variables[var][:]) == len(heights_cut):
-                        variables[var].metadata['ztype'] = 'full'
-                    
             # Now assign to every mapping a height
             all_mappings = [variables[k].metadata['mapping'] for k in valid_vars]
             
@@ -639,40 +718,72 @@ class Query(object):
                 
                 if cond1 and cond2:
                     # W for example
+                    final_heights = heights_cut
                     variables['z_'+str(mapping)] = heights_cut
                 elif cond1 and not cond2:
                     # U for example
                     if np.allclose(y[0:-1], 0.5 * (y_heights[1:] + y_heights[0:-1])):
-                        heights = 0.5 * (heights_cut[:,0:-1,:] + heights_cut[:,1:,:])
+                        final_heights = 0.5 * (heights_cut[:,0:-1,:] + heights_cut[:,1:,:])
                         # Pad with NaN to account for the last column which is unknown
-                        heights = np.pad(heights,((0,0),(0,1),(0,0)),'constant',
+                        final_heights = np.pad(final_heights,((0,0),(0,1),(0,0)),'constant',
                                           constant_values=np.nan)
-                        variables['z_'+str(mapping)] = heights
                 
                 elif not cond1 and cond2:
                      # V for example
                     if np.allclose(x[0:-1], 0.5 * (x_heights[1:] + x_heights[0:-1])):
-                        heights = 0.5 * (heights_cut[:,:,0:-1] + heights_cut[:,:,1:])
+                        final_heights = 0.5 * (heights_cut[:,:,0:-1] + heights_cut[:,:,1:])
                         # Pad with NaN to account for the last column which is unknown
-                        heights = np.pad(heights,((0,0),(0,0),(0,1)),'constant',
+                        final_heights = np.pad(final_heights,((0,0),(0,0),(0,1)),'constant',
                                           constant_values=np.nan)
-                        variables['z_'+str(mapping)] = heights
-            
+                # This checks if at least one of the variables with this mapping
+                # is defined on half levels
+                
+                half_lvl_present = np.any([variables[k].metadata['ztype'] == 'half' \
+                                           for k in valid_vars if \
+                                           variables[k].metadata['mapping'] == mapping])
+    
+                # This checks if at least one of the variables with this mapping
+                # is defined on full levels
+                full_lvl_present = np.any([variables[k].metadata['ztype'] == 'full' \
+                                           for k in valid_vars if \
+                                           variables[k].metadata['mapping'] == mapping])
+                                
+                if full_lvl_present:
+                    if vert_levels != None:
+                        full_heights = final_heights[vert_levels,:,:]
+                    else:
+                        full_heights = final_heights
+                    variables['heights_'+str(mapping)+'_full'] = full_heights
+                    
+                if half_lvl_present:
+                    z_bnds = [variables[k].metadata['zbnds'] \
+                        for k in valid_vars if \
+                        variables[k].metadata['mapping'] == mapping and \
+                        variables[k].metadata['ztype'] == 'half' ]
+                    
+                    z_bnds = z_bnds[0].astype(int)
+                    
+                    half_heights = 0.5 * (final_heights[z_bnds[:,0]-1,:,:] + \
+                           final_heights[z_bnds[:,1]-1,:,:])
+                    
+                    variables['heights_'+str(mapping)+'_half'] = half_heights
+                    
         variables['retrieved_variables'] = np.array(valid_vars )
         self.data = variables
         
         
         # Finally delete temporary folder
-        cmd_rm  = 'rm -r ' + temp_folder_r
+        cmd_rm  = 'rm -r ' + self.temp_folder_r
         self.connection.send_command(cmd_rm, client = 'target')
         
         
         # Local temp folder
-        shutil.rmtree(temp_folder_l, ignore_errors=True)
-        
+        shutil.rmtree(self.temp_folder_l, ignore_errors=True)
+
+    
         return variables
 
-def save_netcdf(data, fname):
+def save_netcdf(data, fname, write_heights = True, compress = True):
     """
     FUNCTION:
         save_netcdf(data, fname)
@@ -684,6 +795,8 @@ def save_netcdf(data, fname):
         data : data structure as obtained with the retrieve_data function of 
                the COSMO_query class
         fname : the full name (path) of the netCDF file to be written
+        write_heights : if set to False, the altitudes corresponding to the
+            model levels will not be written to the file
     """
     if type(data) != dict:
         raise ValueError('Invalid data format, must be dictionary, as obtained ',
@@ -712,27 +825,24 @@ def save_netcdf(data, fname):
         nc_y[:] = data[y_key]
             
         
-        if np.any([data[v].ndim == 3 for v in data.keys()]):
-            z_key = 'z_'+str(mapping)
-            if z_key +'_half' not in nc.dimensions.keys():
-                len_z = len(data['z_'+str(mapping)]) - 1
-                nc.createDimension( z_key +'_half', len_z)           
-            if z_key +'_full' not in nc.dimensions.keys():
-                len_z = len(data['z_'+str(mapping)]) 
-                nc.createDimension( z_key +'_full', len_z)     
-            if z_key not in nc.variables.keys():
-                nc_z = nc.createVariable(z_key,
-                                           'f4', (z_key +'_full',y_key,x_key))          
-                nc_z[:] = [data[z_key]]
-        
-        # Create variable
-        if data[var].ndim == 2:            
-            nc_var = nc.createVariable(var, 'f4', (y_key,x_key))
-        elif data[var].ndim == 3:     
+        if data[var].ndim == 3:
             ztype = data[var].metadata['ztype']
-            nc_var = nc.createVariable(var, 'f4', (z_key + '_' + ztype,
-                                                   y_key, x_key))            
+            z_key =  'heights_'  +str(mapping) + '_' + ztype
         
+            if z_key not in nc.dimensions.keys():
+                len_z = len(data[var])
+                nc.createDimension( z_key , len_z)           
+                
+            if (z_key not in nc.variables.keys()) and write_heights :
+                nc_z = nc.createVariable(z_key,     
+                                         'f4', (z_key,y_key,x_key), zlib=True)          
+                nc_z[:] = [data[z_key]]
+            # Now create variable
+            nc_var = nc.createVariable(var, 'f4', (z_key,y_key, x_key), zlib=True)            
+        
+        elif data[var].ndim == 2:            
+            nc_var = nc.createVariable(var, 'f4', (y_key,x_key), zlib=True)
+
         nc_var[:] = data[var]
         
         # Also assign variable attributes
@@ -764,7 +874,7 @@ def save_netcdf(data, fname):
             nc_grid = nc.createVariable(grid_mapping_key,'c')
             for key in data[grid_mapping_key].metadata.keys(): 
                 setattr(nc_grid,key,data[grid_mapping_key].metadata[key])
-        
+
     # Finally put retrieved_variables array (= list of variables we got) into
     # global attribute
     nc.retrieved_variables = data['retrieved_variables']
@@ -803,8 +913,39 @@ def load_netcdf(fname):
     return data
      
 if __name__ == '__main__':
-    connection = SSH(ELA_ADRESS,USERNAME,PASSWORD)
-    connection.openChannel(KESCH_ADRESS,USERNAME)
-    query = COSMO_query(1)
+    from cosmo_query import config, SSH, Query
+    from cosmo_query import save_netcdf, load_netcdf
+    from cosmo_query import extract, coords_profile
+    ##
+    # We initiate a connection to ela.cscs.ch, with username and password
+    # specified in the config.py file (password is not needed if ssh key is 
+    # defined)
+    connection = SSH(config.ELA_ADRESS,'wolfensb')
+    #
+    # We also need to open a channel to kesch.cscs.ch since it 
+    connection.open_channel(config.KESCH_ADRESS,'wolfensb')
+    
+    # Now that the connection is setup we can create a Query instance
+    query = Query(connection)
+    
+    # And use this query to retrieve some data
+    
+    variables = ['T','P','QV'] # we want temperature and pressure
+    date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
+    model_res = 'fine' # at high resolution
+    mode = 'analysis' # In analysis mode
+    coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
 
     
+    data = query.retrieve_data(variables, date, model_res = 'fine', 
+                              mode = 'analysis', coord_bounds = coord_bounds)
+    
+    options_RHI = {}
+    options_RHI['beamwidth'] = 1.5 # 1.5 deg 3dB beamwidth, as MXPol
+    options_RHI['azimuth'] = 47
+    options_RHI['rrange'] = np.arange(200,10000,75) # from 0.2 to 10 km with a res of 75 m
+    options_RHI['npts_quad'] = [3,3] # 3 quadrature points in azimuthal, 3 in elevational directions
+    options_RHI['rpos'] = [7.0923,46.1134,500] # Radar position in lon/lat/alt
+    options_RHI['refraction_method'] = 1 # 1 = standard 4/3, 2 = ODE refraction 
+    
+    rhi_T = extract(data,['T'],'RHI',options_RHI) 

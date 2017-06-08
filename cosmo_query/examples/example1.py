@@ -28,7 +28,7 @@ query = Query(connection)
 # And use this query to retrieve some data
 
 variables = ['T','P','QV'] # we want temperature and pressure
-date = '2016-05-31 12:30' # for the 31th May 2016 at 12h30
+date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
 model_res = 'fine' # at high resolution
 mode = 'analysis' # In analysis mode
 coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
@@ -37,7 +37,7 @@ data = query.retrieve_data(variables, date, model_res = 'fine',
                           mode = 'analysis', coord_bounds = coord_bounds)
 #
 ## We can save this data to a netcdf
-#save_netcdf(data,'myfile.nc')
+save_netcdf(data,'myfile.nc')
 
 # And load it again from this file
 data = load_netcdf('myfile.nc')

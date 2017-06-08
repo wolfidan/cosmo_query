@@ -170,9 +170,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                 indexes_larger = []
                 indexes_smaller = []
                 
-                zlevels = data['z_'+str(mapping)]      
-                if ztype == 'half':
-                    zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+                zlevels = data['heights_'+str(mapping)+'_' +ztype]      
                 
                 for cv in cut_val:
                     diff = (zlevels-cv)
@@ -255,9 +253,8 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                 if var.ndim == 3:
                     n_lon = siz[2]
                     n_vert = siz[0]
-                    zlevels = data['z_'+str(mapping)]      
-                    if ztype == 'half':
-                        zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+                    zlevels = data['heights_'+str(mapping) + '_' + ztype]     
+                    
                 else: # variable is 2D
                     n_lon = siz[1]
                     n_vert = 1
@@ -346,9 +343,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                 if var.ndim == 3:
                     n_lat = siz[1]
                     n_vert = siz[0]
-                    zlevels = data['z_'+str(mapping)]      
-                    if ztype == 'half':
-                        zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+                    zlevels = data['heights_'+str(mapping) + '_' + ztype]     
                 else: # variable is 2D
                     n_lat = siz[0]
                     n_vert = 1
@@ -470,9 +465,8 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
                 # If variable is 3D get zlevels as well
                 if var.ndim == 3:
                     n_vert = siz[0]
-                    zlevels = data['z_'+str(mapping)]      
-                    if ztype == 'half':
-                        zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+                    zlevels = data['heights_'+str(mapping) + '_' + ztype]      
+                  
                 else: # variable is 2D
                     n_vert = 1
                 
@@ -698,9 +692,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             
             
             # Get model heights and COSMO proj from first variable    
-            zlevels = data['z_'+str(mapping)]      
-            if ztype == 'half':
-                zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+            zlevels = data['heights_'+str(mapping) + '_' + ztype]      
 
             # Get COSMO local coordinates info
             x = data['x_'+str(mapping)]
@@ -983,9 +975,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             
             
             # Get model heights and COSMO proj from first variable    
-            zlevels = data['z_'+str(mapping)]      
-            if ztype == 'half':
-                zlevels = 0.5 * (zlevels[0:-1,:,:] + zlevels[1:,:,:])
+            zlevels = data['heights_'+str(mapping) + '_' + ztype]     
 
             # Get COSMO local coordinates info
             x = data['x_'+str(mapping)]
@@ -1110,14 +1100,13 @@ if __name__ == '__main__':
 #    data = query.retrieve_data(['W','T','V','U'],'2015-04-20 08:37',coord_bounds=([10,45],[12,46]))
 ##
 #    save_netcdf(data,'test.nc')
-    import matplotlib.pyplot as plt
-    data2 = load_netcdf('test.nc')
-    prof = coords_profile([45.8,10.5],[45.2,11],npts=100)
-    options_PPI = {'beamwidth':1.5,'azimuth':30,
-           'rrange':np.arange(200,20000,1000),'npts_quad':[3,3],
-           'refraction_method':1,'rpos':[11,45.5,1000]}
-    ppi_U = extract(data2,['T'],'RHI',options_PPI) 
-#    a = extract(data2,['T','U'],slice_type = 'lonlat',idx = prof)
-
+    variables = ['T','P','QV'] # we want temperature and pressure
+    date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
+    model_res = 'fine' # at high resolution
+    mode = 'analysis' # In analysis mode
+    coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+    
+    data = query.retrieve_data(variables, date, model_res = 'fine', 
+                              mode = 'analysis', coord_bounds = coord_bounds)
     
     
