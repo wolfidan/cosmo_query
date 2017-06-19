@@ -16,9 +16,10 @@ import re
 import uuid
 import shutil
 import fnmatch
+import h5py
 
 # Module imports
-from metaarray import MetaArray
+from metaarray import MetaArray, MetaDict
 import config as cfg # all constants
 
         
@@ -456,34 +457,47 @@ class Query(object):
             
         t0 = t - datetime.timedelta(minutes = t.minute)
         t1 = t + datetime.timedelta(minutes = 60 - t.minute)
-                            
-        if mode == 'analysis':
-            cosmo_f0 = self.get_COSMO_fname(t0, mode = mode)
-            cosmo_f1 = self.get_COSMO_fname(t1, mode = mode)
-        elif mode == 'forecast':          
-            t1 = t + datetime.timedelta(minutes = 60 - t.minute)
 
-                
-            cosmo_f1 = self.get_COSMO_fname(t1, mode = mode,
-                                        forecast_start = forecast_start)
-            if t0 < forecast_start: # if t0 is after forecast start
-                # we set forecast_start = None so the appropriate forecast
-                # start time is automatically computed in get_COSMO_fname
-                forecast_start = None
-                
-            cosmo_f0 = self.get_COSMO_fname(t0, mode = mode,
-                            forecast_start = forecast_start)     
-                        
-
+            
         interpolate_time = False
         if t == t0:
+            if mode == 'analysis':
+                cosmo_f0 = self.get_COSMO_fname(t0, mode = mode)
+            elif mode == 'forecast':          
+                if t0 < forecast_start: # if t0 is after forecast start
+                    # we set forecast_start = None so the appropriate forecast
+                    # start time is automatically computed in get_COSMO_fname
+                    forecast_start = None
+                    
+                cosmo_f0 = self.get_COSMO_fname(t0, mode = mode,
+                                forecast_start = forecast_start)     
             files_to_get = [cosmo_f0]
         elif t == t1:
+            if mode == 'analysis':
+                cosmo_f1 = self.get_COSMO_fname(t1, mode = mode)
+            elif mode == 'forecast':          
+                t1 = t + datetime.timedelta(minutes = 60 - t.minute)
+                cosmo_f1 = self.get_COSMO_fname(t1, mode = mode,
+                                        forecast_start = forecast_start)   
             files_to_get = [cosmo_f1]
         else:
+            if mode == 'analysis':
+                cosmo_f0 = self.get_COSMO_fname(t0, mode = mode)
+                cosmo_f1 = self.get_COSMO_fname(t1, mode = mode)
+            elif mode == 'forecast':          
+                t1 = t + datetime.timedelta(minutes = 60 - t.minute)                    
+                cosmo_f1 = self.get_COSMO_fname(t1, mode = mode,
+                                            forecast_start = forecast_start)
+                if t0 < forecast_start: # if t0 is after forecast start
+                    # we set forecast_start = None so the appropriate forecast
+                    # start time is automatically computed in get_COSMO_fname
+                    forecast_start = None
+                cosmo_f0 = self.get_COSMO_fname(t0, mode = mode,
+                                forecast_start = forecast_start)     
+
             files_to_get = [cosmo_f0, cosmo_f1]
             interpolate_time = True
-            
+              
         # Generate PMSL field to get local coordinates
         if model_res == 'fine':
             if is_COSMO1:
@@ -604,7 +618,7 @@ class Query(object):
             f1 = netCDF4.Dataset(self.temp_folder_l + '/convert1.nc')
             delta = float((t - t0).seconds)
 
-        variables = {}
+        variables = MetaDict()
         for var in f0.variables.keys():
             if var in valid_vars:
                 
@@ -768,7 +782,9 @@ class Query(object):
                     
                     variables['heights_'+str(mapping)+'_half'] = half_heights
                     
-        variables['retrieved_variables'] = np.array(valid_vars )
+        variables.retrieved_variables = np.array(valid_vars )
+        variables.source = 'retrieve_data'
+        
         self.data = variables
         
         
@@ -789,21 +805,40 @@ def save_netcdf(data, fname, write_heights = True, compress = True):
         save_netcdf(data, fname)
     
     PURPOSE:
-        Saves a data structure (output of a COSMO query) to a netCDF file
+        Saves a data structure obtained from the 'retrieve_data' function
+        to a netCDF file
     
     INPUTS:
         data : data structure as obtained with the retrieve_data function of 
                the COSMO_query class
         fname : the full name (path) of the netCDF file to be written
         write_heights : if set to False, the altitudes corresponding to the
-            model levels will not be written to the file
+            model levels will not be written to the file (saves space)
+        compress : If set to True, the netCDF variables will be compressed 
+            within the file
     """
-    if type(data) != dict:
-        raise ValueError('Invalid data format, must be dictionary, as obtained ',
-                         'with the retrieve_data function')
     
+    if type(data) != dict:
+        msg = """
+        Invalid data format, must be dictionary, as obtained with the 
+        retrieve_data function or with the extract function
+        """
+        raise ValueError(msg)
+
+    if data['obtained_from'] != 'retrieve_data':
+        msg = """
+        The functions save_netcdf and load_netcdf are currently only available
+        for data obtained from the 'retrieve_data' function.
+        
+        In order to save/load data obtained from the 'extract' function, you 
+        should use the save_hdf5 and load_hdf5 functions...
+        """
+        raise ValueError(msg)
+        
     nc = netCDF4.Dataset(fname,'w')
-    for var in data['retrieved_variables']:
+    
+        
+    for var in data.retrieved_variables:
         # Get mapping
         mapping = data[var].metadata['mapping']
         
@@ -874,10 +909,11 @@ def save_netcdf(data, fname, write_heights = True, compress = True):
             nc_grid = nc.createVariable(grid_mapping_key,'c')
             for key in data[grid_mapping_key].metadata.keys(): 
                 setattr(nc_grid,key,data[grid_mapping_key].metadata[key])
-
+                            
     # Finally put retrieved_variables array (= list of variables we got) into
     # global attribute
-    nc.retrieved_variables = data['retrieved_variables']
+    nc.retrieved_variables = data.retrieved_variables
+    nc.obtained_from = data['obtained_from']
     
     nc.close()
 
@@ -897,8 +933,9 @@ def load_netcdf(fname):
     OUTPUTS:
         data : the data structure corresponding to the loaded netCDF file
     """
+
     
-    data = {}
+    data = MetaDict()
     nc = netCDF4.Dataset(fname,'r')
     
     for var in nc.variables.keys():
@@ -908,10 +945,86 @@ def load_netcdf(fname):
             
     # Finally get retrieved_variables array (= list of variables we got) from
     # global attribute
-    data['retrieved_variables'] = nc.retrieved_variables
+    data.source = nc.retrieved_variables
         
     return data
-     
+
+def save_hdf5(data, fname):
+    """
+    FUNCTION:
+        save_hdf5(data, fname)
+    
+    PURPOSE:
+        Saves a data structure obtained from the 'extract' function 
+        to an HDF5 file
+    
+    INPUTS:
+        data : data structure as obtained with the retrieve_data function of 
+               the COSMO_query class or with the extract function
+        fname : the full name (path) of the HDF5 file to be written
+    """
+    
+    if data.source != 'extract':
+        msg = """
+        The functions save_hdf5 and load_hdf5 are currently only available
+        for data obtained from the 'extract' function.
+        
+        In order to save/load data obtained from the 'retrieve_data' function, 
+        you should use the save_netcdf and load_netcdf functions...
+        """
+        raise ValueError(msg)
+    
+    h5 = h5py.File(fname, 'w')
+    
+    for k in data.keys():
+        h5.create_group(k)
+        h5.create_dataset(k + '/data', data = data[k])
+        h5.create_group(k+'/coordinates')
+        for kc in data[k].coordinates.keys():
+            h5.create_dataset(k+'/coordinates/'+kc, 
+                                     data = data[k].coordinates[kc])
+        
+        if 'attributes' in data[k].__dict__.keys():
+            h5.create_group(k+'/attributes')
+            for ka in data[k].attributes.keys():
+                h5.create_dataset(k+'/attributes/'+ka, 
+                     data = data[k].attributes[ka])
+    
+    h5.create_dataset('source', data = 'extract')
+    
+    h5.close()
+    
+def load_hdf5(fname):
+    """
+    FUNCTION:
+        data = load_hdf5(name)
+    
+    PURPOSE:
+         Loads an HDF5 file as written by the save_hdf5 function to a data
+         structure similar to the one obtained with the extract function
+    
+    INPUTS:
+        fname : the full name (path) of the HDF5 file to be read
+    
+    OUTPUTS:
+        data : the data structure corresponding to the loaded HDF5 file
+    """
+    
+    data = MetaDict()
+    h5 = h5py.File(fname, 'r')
+    
+    for k in h5.keys():
+        if k == 'source':
+            data.source = h5[k]
+        else:
+            data[k] = MetaArray(h5[k]['data'])
+            for k2 in h5[k].keys():
+                if k2 != 'data':
+                    setattr(data[k],k2,{})
+                    for k3 in h5[k][k2].keys():
+                        getattr(data[k], k2)[k3] = np.array(h5[k][k2][k3])
+    return data
+
 if __name__ == '__main__':
     from cosmo_query import config, SSH, Query
     from cosmo_query import save_netcdf, load_netcdf
@@ -920,25 +1033,38 @@ if __name__ == '__main__':
     # We initiate a connection to ela.cscs.ch, with username and password
     # specified in the config.py file (password is not needed if ssh key is 
     # defined)
-    connection = SSH(config.ELA_ADRESS,'wolfensb')
-    #
-    # We also need to open a channel to kesch.cscs.ch since it 
-    connection.open_channel(config.KESCH_ADRESS,'wolfensb')
-    
-    # Now that the connection is setup we can create a Query instance
-    query = Query(connection)
-    
-    # And use this query to retrieve some data
-    
-    variables = ['T','P','QV'] # we want temperature and pressure
-    date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
-    model_res = 'fine' # at high resolution
-    mode = 'analysis' # In analysis mode
-    coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+#    connection = SSH(config.ELA_ADRESS,'wolfensb')
+#    #
+#    # We also need to open a channel to kesch.cscs.ch since it 
+#    connection.open_channel(config.KESCH_ADRESS,'wolfensb')
+#    
+#    # Now that the connection is setup we can create a Query instance
+#    query = Query(connection)
+#    
+#    # And use this query to retrieve some data
+#    
+#    variables = ['T','P','QV'] # we want temperature and pressure
+#    date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
+#    model_res = 'fine' # at high resolution
+#    mode = 'analysis' # In analysis mode
+#    coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+#
+#    
+#    data = query.retrieve_data(variables, date, model_res = 'fine', 
+#                              mode = 'analysis', coord_bounds = coord_bounds)
+#    
 
+    data = load_netcdf('./examples/myfile.nc')
     
-    data = query.retrieve_data(variables, date, model_res = 'fine', 
-                              mode = 'analysis', coord_bounds = coord_bounds)
+    # We can then use this data to extract a profile, here are some examples
+    
+    # 1) Temperature at 2000 and 4000 m
+    prof1 = extract(data,['T'],'level',[2000,4000])
+    
+    # 2) Latitudinal profile at lat = 46.2 degrees
+    prof2 = extract(data,['T'],'lat',46.2)
+    save_hdf5(prof1,'test.hdf5')
+    prof2 = load_hdf5('test.hdf5')
     
     options_RHI = {}
     options_RHI['beamwidth'] = 1.5 # 1.5 deg 3dB beamwidth, as MXPol
@@ -949,3 +1075,5 @@ if __name__ == '__main__':
     options_RHI['refraction_method'] = 1 # 1 = standard 4/3, 2 = ODE refraction 
     
     rhi_T = extract(data,['T'],'RHI',options_RHI) 
+
+    save_hdf5(rhi_T,'test2.hdf5')

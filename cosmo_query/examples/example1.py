@@ -13,31 +13,31 @@ import matplotlib.pyplot as plt
 from cosmo_query import config, SSH, Query
 from cosmo_query import save_netcdf, load_netcdf
 from cosmo_query import extract, coords_profile
+###
+## We initiate a connection to ela.cscs.ch, with username and password
+## specified in the config.py file (password is not needed if ssh key is 
+## defined)
+#connection = SSH(config.ELA_ADRESS,'wolfensb')
 ##
-# We initiate a connection to ela.cscs.ch, with username and password
-# specified in the config.py file (password is not needed if ssh key is 
-# defined)
-connection = SSH(config.ELA_ADRESS,'wolfensb')
+## We also need to open a channel to kesch.cscs.ch since it 
+#connection.open_channel(config.KESCH_ADRESS,'wolfensb')
 #
-# We also need to open a channel to kesch.cscs.ch since it 
-connection.open_channel(config.KESCH_ADRESS,'wolfensb')
-
-# Now that the connection is setup we can create a Query instance
-query = Query(connection)
-
-# And use this query to retrieve some data
-
-variables = ['T','P','QV'] # we want temperature and pressure
-date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
-model_res = 'fine' # at high resolution
-mode = 'analysis' # In analysis mode
-coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
-
-data = query.retrieve_data(variables, date, model_res = 'fine', 
-                          mode = 'analysis', coord_bounds = coord_bounds)
+## Now that the connection is setup we can create a Query instance
+#query = Query(connection)
 #
-## We can save this data to a netcdf
-save_netcdf(data,'myfile.nc')
+## And use this query to retrieve some data
+#
+#variables = ['T','P','QV'] # we want temperature and pressure
+#date = '2015-05-31 12:00' # for the 31th May 2016 at 12h30
+#model_res = 'fine' # at high resolution
+#mode = 'analysis' # In analysis mode
+#coord_bounds = ([6.6,45.8],[8.4,46.6]) # Over an area covering roughly the Valais
+#
+#data = query.retrieve_data(variables, date, model_res = 'fine', 
+#                          mode = 'analysis', coord_bounds = coord_bounds)
+##
+### We can save this data to a netcdf
+#save_netcdf(data,'myfile.nc')
 
 # And load it again from this file
 data = load_netcdf('myfile.nc')
@@ -88,4 +88,4 @@ options_RHI['npts_quad'] = [3,3] # 3 quadrature points in azimuthal, 3 in elevat
 options_RHI['rpos'] = [7.0923,46.1134,500] # Radar position in lon/lat/alt
 options_RHI['refraction_method'] = 1 # 1 = standard 4/3, 2 = ODE refraction 
 
-rhi_T = extract(data,['T'],'RHI',options_RHI) 
+rhi_T = extract(data,['T','QV'],'RHI',options_RHI) 

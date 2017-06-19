@@ -1,6 +1,6 @@
 from collections import OrderedDict
 import numpy as np
-from metaarray import MetaArray
+from metaarray import MetaArray, MetaDict
 
 import pyproj as pyproj
 import numpy as np
@@ -133,7 +133,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
 
     storage = {} # This is used to store some data that is consistent for the 
     # different variables
-    output = {}
+    output = MetaDict()
     
     if slice_type == 'level':
         """
@@ -1088,7 +1088,7 @@ def extract(data, variable_names, slice_type, idx, parallel = False):
             # Assign to overall dict
             output[varname] = marray        
             
-                    
+    output.source = 'extract'
     return output
 
 if __name__ == '__main__':
