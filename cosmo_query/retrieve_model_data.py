@@ -820,7 +820,7 @@ def save_netcdf(data, fname, write_heights = True, compress = True):
 
     try:
 
-        if data['obtained_from'] != 'retrieve_data':
+        if data.source != 'retrieve_data':
             msg = """
             The functions save_netcdf and load_netcdf are currently only available
             for data obtained from the 'retrieve_data' function.
@@ -908,10 +908,11 @@ def save_netcdf(data, fname, write_heights = True, compress = True):
         # Finally put retrieved_variables array (= list of variables we got) into
         # global attribute
         nc.retrieved_variables = data.retrieved_variables
-        nc.obtained_from = data['obtained_from']
+        nc.source = data.source
 
         nc.close()
-    except:
+    except Exception as e:
+        print(e)
         msg = """
         Invalid data format, must be dictionary, as obtained with the
         retrieve_data function or with the extract function
@@ -946,7 +947,8 @@ def load_netcdf(fname):
 
     # Finally get retrieved_variables array (= list of variables we got) from
     # global attribute
-    data.source = nc.retrieved_variables
+    data.retrieved_variables = nc.retrieved_variables
+    data.source = 'retrieve_data'
 
     return data
 
